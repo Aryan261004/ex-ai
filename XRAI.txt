@@ -1,0 +1,104 @@
+input_img = tf.keras.applications.inception_v3.preprocess_input(
+    img.copy()
+)
+
+input_img = np.expand_dims(input_img, axis=0)
+
+pred = model.predict(input_img, verbose=0)
+
+target_class = np.argmax(pred[0])
+
+confidence = pred[0][target_class]
+
+print("Predicted class:", target_class)
+print("Confidence:", confidence)
+
+
+------------
+
+
+label = tf.keras.applications.inception_v3.decode_predictions(
+    pred, top=1
+)
+
+print("Prediction:", label[0][0][1])
+
+
+--------------
+
+
+def call_model_function(
+    images,
+    call_model_args=None,
+    expected_keys=None
+):
+
+    target_class = call_model_args["class_idx"]
+
+    images = tf.convert_to_tensor(images, dtype=tf.float32)
+
+    with tf.GradientTape() as tape:
+
+        tape.watch(images)
+
+        processed = tf.keras.applications.inception_v3.preprocess_input(
+            images
+        )
+
+        predictions = model(processed, training=False)
+
+        score = predictions[:, target_class]
+
+    gradients = tape.gradient(score, images)
+
+    return {
+        saliency.base.INPUT_OUTPUT_GRADIENTS:
+        gradients.numpy()
+    }
+
+
+
+------------
+
+
+# Create XRAI object
+xrai_object = saliency.XRAI()
+
+# Select target class
+call_model_args = {
+    "class_idx": target_class
+}
+
+# Generate XRAI attribution
+xrai_attributions = xrai_object.GetMask(
+    img,
+    call_model_function,
+    call_model_args,
+    batch_size=20
+)
+
+print("XRAI shape:", xrai_attributions.shape)
+
+
+
+------------
+
+plt.figure(figsize=(15, 5))
+
+plt.subplot(1, 3, 1)
+plt.imshow(img.astype(np.uint8))
+plt.title("Original Image")
+plt.axis("off")
+
+plt.subplot(1, 3, 2)
+plt.imshow(xrai_attributions, cmap="hot")
+plt.title("XRAI Heatmap")
+plt.axis("off")
+
+plt.subplot(1, 3, 3)
+plt.imshow(img.astype(np.uint8))
+plt.imshow(xrai_attributions, cmap="hot", alpha=0.5)
+plt.title("XRAI Overlay")
+plt.axis("off")
+
+plt.show()

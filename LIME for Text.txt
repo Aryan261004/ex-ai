@@ -1,0 +1,104 @@
+def predict_proba(sentences):
+
+    inputs = tokenizer(
+        sentences,
+        padding=True,
+        truncation=True,
+        max_length=128,
+        return_tensors="pt"
+    )
+
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probabilities = torch.softmax(outputs.logits, dim=1)
+
+    return probabilities.cpu().numpy()
+
+
+----------
+
+sentence = "The plot was weak, but the acting was wonderful."
+
+label_map = model.config.id2label
+
+negative_label = next(
+    i for i, label in label_map.items()
+    if label.upper() == "NEGATIVE"
+)
+
+positive_label = next(
+    i for i, label in label_map.items()
+    if label.upper() == "POSITIVE"
+)
+
+probabilities = predict_proba([sentence])[0]
+
+predicted_label = int(np.argmax(probabilities))
+
+print("Original sentence:", sentence)
+print("Negative probability:", probabilities[negative_label])
+print("Positive probability:", probabilities[positive_label])
+print("Predicted sentiment:", label_map[predicted_label])
+
+
+-----------
+
+explainer = LimeTextExplainer(
+    class_names=[label_map[i] for i in range(model.config.num_labels)],
+    random_state=42
+)
+
+explanation = explainer.explain_instance(
+    sentence,
+    predict_proba,
+    labels=[predicted_label],
+    num_features=len(sentence.split()),
+    num_samples=1000
+)
+
+print("LIME Word Contributions:")
+
+for word, score in explanation.as_list(label=predicted_label):
+    print(f"{word}: {score:.4f}")
+
+
+--------------
+
+
+lime_records = []
+
+def recording_predict_proba(sentences):
+
+    probabilities = predict_proba(sentences)
+
+    for text, probs in zip(sentences, probabilities):
+        lime_records.append({
+            "Sentence": text,
+            "Predicted_Class_Probability": float(probs[predicted_label])
+        })
+
+    return probabilities
+
+
+------------
+
+lime_records = []
+
+explanation = explainer.explain_instance(
+    sentence,
+    recording_predict_proba,
+    labels=[predicted_label],
+    num_features=len(sentence.split()),
+    num_samples=1000
+)
+
+records_df = pd.DataFrame(lime_records)
+
+print("Total sentences recorded:", len(records_df))
+
+
+------------
+
+

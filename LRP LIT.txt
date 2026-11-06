@@ -1,0 +1,212 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+sentence = "i love this movie"
+
+words = sentence.lower().split()
+
+x = np.zeros(len(vocab))
+
+for word in words:
+    if word in vocab:
+        x[vocab[word]] = 1
+
+def forward(x, W1, b1, W2, b2):
+
+    hidden = np.maximum(0, x @ W1 + b1)
+
+    output = hidden @ W2 + b2
+
+    return hidden, output
+
+hidden, logit = forward(x, W1, b1, W2, b2)
+
+print("Hidden activations:", hidden)
+print("Output logit:", logit)
+
+
+--------------
+
+def lrp(x, W1, W2, b1, b2, epsilon=0):
+
+    hidden, output = forward(x, W1, b1, W2, b2)
+
+    # Output relevance
+    R_output = output
+
+    # Output to hidden layer
+    z2 = hidden * W2
+
+    denominator2 = np.sum(z2)
+
+    if abs(denominator2) < 1e-12:
+        R_hidden = np.zeros_like(hidden)
+    else:
+        R_hidden = (z2 / denominator2) * R_output
+
+    # Hidden layer to input words
+    z1 = x[:, None] * W1
+
+    denominator1 = np.sum(z1, axis=0)
+
+    denominator1 = denominator1 + epsilon * np.where(
+        denominator1 >= 0, 1, -1
+    )
+
+    R_input = np.divide(
+        z1,
+        denominator1[None, :],
+        out=np.zeros_like(z1),
+        where=np.abs(denominator1[None, :]) > 1e-12
+    ) @ R_hidden
+
+    return R_input
+
+
+-----------
+
+
+def grad_x_input(x, W1, W2, b1):
+
+    hidden = np.maximum(0, x @ W1 + b1)
+
+    gradient = W1 @ (W2 * (hidden > 0))
+
+    attribution = x * gradient
+
+    return attribution
+
+
+------------
+
+# Set biases to zero
+b1_zero = np.zeros_like(b1)
+b2_zero = 0.0
+
+# LRP on bias-free model
+lrp_bias_free = lrp(
+    x, W1, W2, b1_zero, b2_zero
+)
+
+# Gradient x Input on bias-free model
+grad_bias_free = grad_x_input(
+    x, W1, W2, b1_zero
+)
+
+print("LRP:", lrp_bias_free)
+print("Gradient x Input:", grad_bias_free)
+
+
+------------
+
+# LRP with original biases
+lrp_real = lrp(
+    x, W1, W2, b1, b2
+)
+
+# Gradient x Input with original biases
+grad_real = grad_x_input(
+    x, W1, W2, b1
+)
+
+print("Real model LRP:", lrp_real)
+print("Real model Gradient x Input:", grad_real)
+
+
+---------------
+
+epsilon_values = [0, 0.1, 0.5, 1, 2]
+
+epsilon_results = {}
+
+for eps in epsilon_values:
+
+    relevance = lrp(
+        x, W1, W2, b1, b2,
+        epsilon=eps
+    )
+
+    epsilon_results[eps] = relevance
+
+    print("\nEpsilon:", eps)
+
+    for word in words:
+        if word in vocab:
+            idx = vocab[word]
+            print(word, ":", relevance[idx])
+
+
+--------------
+
+
+word_indices = [vocab[w] for w in words if w in vocab]
+present_words = [w for w in words if w in vocab]
+
+lrp_values = lrp_real[word_indices]
+grad_values = grad_real[word_indices]
+
+positions = np.arange(len(present_words))
+width = 0.35
+
+plt.figure(figsize=(10, 5))
+
+plt.bar(
+    positions - width/2,
+    lrp_values,
+    width,
+    label="LRP"
+)
+
+plt.bar(
+    positions + width/2,
+    grad_values,
+    width,
+    label="Gradient x Input"
+)
+
+plt.xticks(positions, present_words)
+plt.xlabel("Words")
+plt.ylabel("Relevance / Attribution")
+plt.title("LRP vs Gradient x Input")
+plt.axhline(0, color="black", linewidth=0.8)
+plt.legend()
+plt.show()
+
+
+----------------
+
+
+plt.figure(figsize=(10, 5))
+
+for eps in epsilon_values:
+
+    values = epsilon_results[eps][word_indices]
+
+    plt.plot(
+        present_words,
+        values,
+        marker="o",
+        label=f"Epsilon = {eps}"
+    )
+
+plt.xlabel("Words")
+plt.ylabel("Relevance Score")
+plt.title("Effect of Epsilon on LRP")
+plt.axhline(0, color="black", linewidth=0.8)
+plt.legend()
+plt.grid()
+plt.show()
+
+-------------
+
+
+plt.figure(figsize=(9, 5))
+
+plt.barh(present_words, lrp_real[word_indices])
+
+plt.xlabel("LRP Relevance")
+plt.ylabel("Words")
+plt.title("Word-wise LRP Explanation")
+
+plt.axvline(0, color="black")
+plt.show()
